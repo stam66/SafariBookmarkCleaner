@@ -25,6 +25,17 @@ where pLines is one line per URL just tested: category TAB reason TAB url */
 # bmcVerdict(pURL)                     
 /* category TAB bucket TAB detail TAB httpCode TAB finalURL */
 
+# bmcStats()
+/* Array of counts for the interface: total, unique, duplicates, readingList, nonWeb,
+   urlsDELETE/urlsREVIEW/urlsOK, bookmarksDELETE/bookmarksREVIEW/bookmarksOK */
+
+# bmcResults(pCategory)
+/* DataGrid-ready rows (one per bookmark) for DELETE, REVIEW, OK or ALL:
+   keys category reason detail http url title folder copies readingList uuid */
+
+# bmcOpenURL pURL
+/* Open a bookmark in the default browser. */
+
 # bmcVerdicts()                        
 /* Array of all verdicts keyed by URL. */
 
