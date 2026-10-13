@@ -103,6 +103,41 @@ on mouseUp
 end mouseUp
 ```
 
+### Showing results in a DataGrid
+
+The scan tests each distinct URL once (about 1,780 for 3,700 bookmarks, because the old imports hold many copies), and every copy of a URL gets the same verdict. `bmcStats()` gives the numbers for the interface and `bmcResults()` gives rows for a DataGrid, so the log field can go.
+
+```
+-- After bmcScan succeeds: counts and the grid
+on showResults
+   local tStats
+   put bmcStats() into tStats
+   put tStats["total"] && "bookmarks," && tStats["unique"] && "distinct URLs," && \
+         tStats["duplicates"] && "duplicate copies." & return & \
+         "Delete:" && tStats["bookmarksDELETE"] && " Review:" && tStats["bookmarksREVIEW"] && \
+         " OK:" && tStats["bookmarksOK"] into field "Status"
+   filterResults "DELETE"
+end showResults
+
+-- Radio buttons named "DELETE", "REVIEW", "OK" and "ALL" in a group "Filter"
+on mouseUp
+   filterResults the short name of the target
+end mouseUp
+
+command filterResults pCategory
+   set the dgData of group "Results" to bmcResults(pCategory)
+end filterResults
+
+-- In the DataGrid's script: double-click a row to open that bookmark
+on mouseDoubleUp
+   local tLine
+   put the dgHilitedLines of me into tLine
+   if tLine is not empty then bmcOpenURL the dgDataOfLine[tLine]["url"] of me
+end mouseDoubleUp
+```
+
+Set up the DataGrid as a table with columns named `category`, `reason`, `url`, `title`, `folder`, `copies` (the row keys), in that or any order. A button that opens the selected row works the same way as the double-click handler. `copies` shows how many bookmarks share that URL; they all move together when you apply.
+
 ## Handlers
 
 All public names begin with `bmc`.
@@ -112,6 +147,9 @@ All public names begin with `bmc`.
 | `bmcScan [pProgressTarget]` | Loads the bookmarks, tests every unique URL, stores the verdicts. `the result` is empty on success or an error message. Sends `bmcProgress pDone, pTotal, pLines` to the target after every batch. |
 | `bmcApply([pDeleteName], [pReviewName])` | Moves every flagged bookmark into the two folders (default names "For deletion" and "Review"), each with sub-folders by reason. Returns `OK ...` or `ERROR ...`. Refuses while Safari is running. Reading List items are never moved. |
 | `bmcSummary()` | Text summary of the last scan: counts per category and reason. |
+| `bmcStats()` | Array of counts: `total`, `unique`, `duplicates`, `readingList`, `nonWeb`, `urlsDELETE` / `urlsREVIEW` / `urlsOK`, `bookmarksDELETE` / `bookmarksREVIEW` / `bookmarksOK`. |
+| `bmcResults(pCategory)` | DataGrid-ready rows, one per bookmark, for `DELETE`, `REVIEW`, `OK` or `ALL`. Each row has `category`, `reason`, `detail`, `http`, `url`, `title`, `folder`, `copies`, `readingList`, `uuid`. |
+| `bmcOpenURL pURL` | Opens a bookmark in the default browser. |
 | `bmcReportCSV()` | CSV of every flagged bookmark, one row per bookmark. |
 | `bmcVerdict(pURL)` | `category TAB reason TAB detail TAB httpCode TAB finalURL` for one URL. |
 | `bmcVerdicts()` | Array of all verdicts keyed by URL. |

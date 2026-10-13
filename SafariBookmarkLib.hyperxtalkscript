@@ -548,6 +548,76 @@ function bmcSummary
    return tOut
 end bmcSummary
 
+/* Counts for the interface.  Returns an array:
+     total        bookmarks in the file           unique       distinct URLs
+     duplicates   total - unique (extra copies)   readingList  Reading List items (never moved)
+     nonWeb       URLs with schemes like feed: or chrome: (classified without fetching)
+     urlsDELETE / urlsREVIEW / urlsOK             distinct URLs per category
+     bookmarksDELETE / bookmarksREVIEW / bookmarksOK   bookmarks per category (all copies) */
+function bmcStats
+   local tStats, tLine, tURL, tSeen, tCat, tScheme
+   repeat for each item tCat in bmcCategories()
+      put 0 into tStats["urls" & tCat]
+      put 0 into tStats["bookmarks" & tCat]
+   end repeat
+   put 0 into tStats["total"]
+   put 0 into tStats["readingList"]
+   put 0 into tStats["nonWeb"]
+   repeat for each line tLine in sRows
+      add 1 to tStats["total"]
+      if tabItem(tLine, 5) is true then add 1 to tStats["readingList"]
+      put tabItem(tLine, 2) into tURL
+      put tabItem(sVerdict[tURL], 1) into tCat
+      if tCat is not empty then add 1 to tStats["bookmarks" & tCat]
+      if tSeen[tURL] then next repeat
+      put true into tSeen[tURL]
+      if tCat is not empty then add 1 to tStats["urls" & tCat]
+      put toLower(char 1 to (offset(":", tURL) - 1) of tURL) into tScheme
+      if tScheme is not among the items of "http,https" then add 1 to tStats["nonWeb"]
+   end repeat
+   put the number of lines of the keys of tSeen into tStats["unique"]
+   put tStats["total"] - tStats["unique"] into tStats["duplicates"]
+   return tStats
+end bmcStats
+
+/* Rows for a DataGrid, one per bookmark, newest scan.  pCategory: DELETE, REVIEW, OK or ALL.
+   Returns a numerically keyed array of rows; each row has the keys
+     category reason detail http url title folder copies readingList uuid
+   ready for   set the dgData of group "Results" to bmcResults("DELETE")   */
+function bmcResults pCategory
+   local tRows, tLine, tURL, tV, tN, tCopies, tRow
+   if pCategory is empty then put "ALL" into pCategory
+   repeat for each line tLine in sRows
+      add 1 to tCopies[tabItem(tLine, 2)]
+   end repeat
+   put 0 into tN
+   repeat for each line tLine in sRows
+      put tabItem(tLine, 2) into tURL
+      put sVerdict[tURL] into tV
+      if tV is empty then next repeat
+      if pCategory is not "ALL" and tabItem(tV, 1) is not pCategory then next repeat
+      add 1 to tN
+      put tabItem(tV, 1) into tRow["category"]
+      put tabItem(tV, 2) into tRow["reason"]
+      put tabItem(tV, 3) into tRow["detail"]
+      put tabItem(tV, 4) into tRow["http"]
+      put tURL into tRow["url"]
+      put tabItem(tLine, 4) into tRow["title"]
+      put tabItem(tLine, 3) into tRow["folder"]
+      put tCopies[tURL] into tRow["copies"]
+      put tabItem(tLine, 5) into tRow["readingList"]
+      put tabItem(tLine, 1) into tRow["uuid"]
+      put tRow into tRows[tN]
+   end repeat
+   return tRows
+end bmcResults
+
+/* Open a bookmark in the default browser. */
+command bmcOpenURL pURL
+   if pURL is empty then exit bmcOpenURL
+   launch url pURL
+end bmcOpenURL
+
 function bmcReportCSV
    local tCSV, tLine, tURL, tV
    put "category,reason,detail,http,url,final_url,bookmark_title,folder" & LF into tCSV
