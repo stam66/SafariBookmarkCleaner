@@ -2,3 +2,4 @@
 *.csv
 *.backup-*
 Bookmarks.plist
+__pycache__/

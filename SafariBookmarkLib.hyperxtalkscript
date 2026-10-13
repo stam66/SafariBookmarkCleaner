@@ -1,43 +1,72 @@
-script "SafariBookmarkLib"
+﻿script "SafariBookmarkLib"
 /*
-SafariBookmarkLib - LiveCode / HyperXTalk library for finding stale Safari bookmarks
-and moving them into "For deletion" and "Review" folders.  macOS only.
-
-Pure LiveCode script.  The only outside help is two command-line tools that ship with
-every Mac, called through shell():  plutil (binary plist <-> XML) and curl (fetching URLs).
-Safari has no AppleScript access to bookmarks, so the bookmarks file is edited directly;
-Safari must be quit while that happens and a backup is always written first.
-
-Use:   start using stack "SafariBookmarkLib"     (or include it in your standalone)
-
-PUBLIC HANDLERS  (all names begin with bmc)
-  bmcScan [pProgressTarget]            Load bookmarks, test every unique URL, store verdicts.
-                                       Returns empty on success or an error message.
-                                       While scanning it sends  bmcProgress pDone, pTotal, pLines
-                                       to pProgressTarget (a control or stack) after every batch,
-                                       where pLines is one line per URL just tested:
-                                       category TAB reason TAB url
-  bmcApply [pDeleteName], [pReviewName]  Move flagged bookmarks into the two folders.
-                                       Returns "OK ..." or "ERROR ...".  Refuses while Safari runs.
-  bmcSummary()                         Text summary of the last scan.
-  bmcReportCSV()                       CSV of every flagged bookmark (one row per bookmark).
-  bmcVerdict(pURL)                     category TAB bucket TAB detail TAB httpCode TAB finalURL
-  bmcVerdicts()                        Array of all verdicts keyed by URL.
-  bmcBookmarks()                       The loaded bookmarks, one per line:
-                                       uuid TAB url TAB folderPath TAB title TAB inReadingList
-  bmcSafariIsRunning()                 true / false
-  bmcBackupFolder()                    ~/Library/Application Support/SafariBookmarkCleaner/Backups
-  bmcBackups()                         Backups in that folder, newest first (full paths, one per line).
-  bmcLastBackup()                      Path of the backup made by the last bmcApply.
-  bmcRestore([pBackupPath])            Copy a backup (default: the newest) back over the bookmarks
-                                       file.  Returns "OK ..." or "ERROR ...".  Refuses while Safari runs.
-  bmcSetBookmarksFile pPath            Work on another plist (testing).  Empty = Safari's own.
-  bmcSetOption pName, pValue           "parallel" (32)  "batch" (64)  "timeout" seconds (20)
-  bmcCategories()                      "DELETE,REVIEW,OK"
-
-Lower level, also public:  bmcLoadBookmarks(), bmcCheckURLs pURLs, [pProgressTarget],
-  bmcClassify(pURL, pHTTPCode, pFinalURL, pCurlExit, pBodyFile)
+SafariBookmarkLib - LiveCode / HyperXTalk library for finding stale Safari bookmarks  and moving them into "For deletion" and "Review" folders.  macOS only.
+Uses shell() for plutil (binary plist <-> XML) and curl (fetch URLs as HXT does not have the commercial TsNet offered by LC)
+Safari has no AppleScript access to bookmarks, so the bookmarks file is edited directly; Safari must be quit while that happens and a backup is always written first.
 */
+
+#Use:    start using stack "SafariBookmarkLib"     (or include it in your standalone)
+
+# PUBLIC HANDLERS  (all names begin with bmc);
+# bmcScan [pProgressTarget]            Load bookmarks, test every unique URL, store verdicts. 
+/* Returns empty on success or an error message.
+While scanning it sends  bmcProgress pDone, pTotal, pLines to pProgressTarget (a control or stack) after every batch,
+where pLines is one line per URL just tested: category TAB reason TAB url */
+
+# bmcApply [pDeleteName], [pReviewName]  
+/* Move flagged bookmarks into the two folders. Returns "OK ..." or "ERROR ...".  Refuses while Safari runs. */
+
+# bmcSummary() 
+/* Text summary of the last scan. */
+
+# bmcReportCSV()                       
+/* CSV of every flagged bookmark (one row per bookmark). */
+
+# bmcVerdict(pURL)                     
+/* category TAB bucket TAB detail TAB httpCode TAB finalURL */
+
+# bmcVerdicts()                        
+/* Array of all verdicts keyed by URL. */
+
+# bmcBookmarks()                       
+/* The loaded bookmarks, one per line: uuid TAB url TAB folderPath TAB title TAB inReadingList */
+
+# bmcSafariIsRunning()                 
+/* true / false */
+
+# bmcBackupFolder()                   
+/*   ~/Library/Application Support/SafariBookmarkCleaner/Backups */
+
+# bmcBackups()                         
+/* Backups in that folder, newest first (full paths, one per line). */
+
+# bmcLastBackup()                      
+/* Path of the backup made by the last bmcApply. */
+
+# bmcRestore([pBackupPath])            
+/* Copy a backup (default: the newest) back over the bookmarks file.  Returns "OK ..." or "ERROR ...".  Refuses while Safari runs. */
+
+# bmcCanReadBookmarks()
+/* true if the bookmarks file can be read right now (macOS may refuse without Full Disk Access) */
+
+# bmcChooseBookmarksFile()
+/* Open dialog pointed at Safari's Bookmarks.plist.  Picking the file there grants this app read and
+   write access to that one file for the rest of its run, so no Full Disk Access is needed.
+   Returns the chosen path, or empty if cancelled. */
+
+# bmcSetBookmarksFile pPath            
+/* Work on another plist (testing).  Empty = Safari's own. */
+
+# bmcSetOption pName, pValue           
+/*  "parallel" (32)  "batch" (64)  "timeout" seconds (20) */
+
+# bmcCategories()                      
+/*  "DELETE,REVIEW,OK" */
+
+# bmcLoadBookmarks(), bmcCheckURLs pURLs, [pProgressTarget]
+
+# bmcClassify(pURL, pHTTPCode, pFinalURL, pCurlExit, pBodyFile)
+
 
 constant kDefaultDeleteName = "For deletion"
 constant kDefaultReviewName = "Review"
@@ -59,8 +88,32 @@ end bmcSetBookmarksFile
 
 function bmcBookmarksFile
    if sFile is not empty then return sFile
-   return specialFolderPath("home") & "/Library/Safari/Bookmarks.plist"
+   return bmcDefaultBookmarksFile()
 end bmcBookmarksFile
+
+function bmcDefaultBookmarksFile
+   return specialFolderPath("home") & "/Library/Safari/Bookmarks.plist"
+end bmcDefaultBookmarksFile
+
+private function isSafariOwnFile
+   return bmcBookmarksFile() is bmcDefaultBookmarksFile()
+end isSafariOwnFile
+
+/* True when the bookmarks file can actually be read (macOS may refuse without Full Disk Access). */
+function bmcCanReadBookmarks
+   get shell("head -c 8 " & q(bmcBookmarksFile()) & " 2>/dev/null")
+   return it begins with "bplist" or it begins with "<?xml"
+end bmcCanReadBookmarks
+
+/* Let the user pick Bookmarks.plist.  macOS treats a file chosen in an Open dialog as
+   user intent and lets this app read and write it for the rest of the session, so no
+   Full Disk Access is needed.  Returns the chosen path, or empty if cancelled. */
+function bmcChooseBookmarksFile
+   answer file "Select Safari's Bookmarks.plist (in your Library/Safari folder)" with bmcDefaultBookmarksFile()
+   if it is empty then return empty
+   bmcSetBookmarksFile it
+   return it
+end bmcChooseBookmarksFile
 
 command bmcSetOption pName, pValue
    switch toLower(pName)
@@ -148,7 +201,7 @@ function bmcRestore pBackupPath
    if pBackupPath is empty then return "ERROR: there is no backup to restore"
    if there is not a file pBackupPath then return "ERROR: backup not found:" && pBackupPath
    put bmcBookmarksFile() into tFile
-   if sFile is empty and bmcSafariIsRunning() then return "ERROR: Safari is running. Quit Safari first, then restore again."
+   if isSafariOwnFile() and bmcSafariIsRunning() then return "ERROR: Safari is running. Quit Safari first, then restore again."
    get shell("plutil -lint " & q(pBackupPath))
    if the result is not 0 then return "ERROR: that backup is not a valid bookmarks file:" && it
    get shell("cp " & q(pBackupPath) && q(tFile))
@@ -161,7 +214,7 @@ function bmcSafariIsRunning
    return the result is 0
 end bmcSafariIsRunning
 
----------------------------------------------------------------- small helpers
+# small helpers
 private function q pText
    return quote & pText & quote
 end q
@@ -197,7 +250,7 @@ private function newUUID
    return toUpper(uuid("random"))
 end newUUID
 
----------------------------------------------------------------- reading the plist (pure LiveCode)
+# reading the plist
 /* Parse the XML form of the plist, which plutil writes one element per line, tab-indented.
    Fills pDicts[id] with: start (byte of the LF before "<dict>"), end (last byte of "</dict>"),
    parent (dict id), ind (indent), type, title, url, uuid, childrenEnd (byte of the LF before
@@ -270,16 +323,16 @@ private function folderPathOf pId, @pDicts
    return tPath
 end folderPathOf
 
-/* Reads the bookmarks file.  Returns empty on success, else an error message. */
+/*  Reads the bookmarks file.  Returns empty on success, else an error message. */
 function bmcLoadBookmarks
    local tData, tDicts, tId, tPath, tRL, tRows, tErr
    put empty into sRows
-   if there is not a file bmcBookmarksFile() then
-      return "ERROR: cannot see " & bmcBookmarksFile() & ". Grant Full Disk Access to the app running this stack (System Settings > Privacy & Security)."
+   if not bmcCanReadBookmarks() then
+      return "ERROR: macOS will not let this app read " & bmcBookmarksFile() & ". Call bmcChooseBookmarksFile() so the user picks the file in an Open dialog, or grant the app Full Disk Access."
    end if
    put shell("plutil -convert xml1 -o - " & q(bmcBookmarksFile())) into tData
    if the result is not 0 or not (tData contains "<plist") then
-      return "ERROR: could not read the bookmarks file (" & word 1 to 20 of tData & "). Grant Full Disk Access to the app running this stack."
+      return "ERROR: could not read the bookmarks file (" & word 1 to 20 of tData & ")."
    end if
    get parsePlistXML(tData, tDicts)
    repeat for each key tId in tDicts
@@ -293,7 +346,7 @@ function bmcLoadBookmarks
    return empty
 end bmcLoadBookmarks
 
----------------------------------------------------------------- scanning
+# scanning
 /* Load + test everything.  Returns empty or an error message. */
 command bmcScan pProgressTarget
    local tErr, tURLs, tSeen, tLine, tURL, tScheme
@@ -335,8 +388,7 @@ command bmcCheckURLs pURLs, pProgressTarget
    end repeat
 end bmcCheckURLs
 
-/* One batch: write numbered URL list, let xargs run curl in parallel, read results back.
-   Returns one line per URL: category TAB bucket TAB url */
+/* One batch: write numbered URL list, let xargs run curl in parallel, read results back.    Returns one line per URL: category TAB bucket TAB url */
 private function checkBatch pURLs
    local tDir, tCurl, tCmd, tLines, tLine, tURL, tIndex, tMap, tSafe, tOut
    put workDir() & "/batch" into tDir
@@ -477,7 +529,7 @@ private function regDomain pHost
    return pHost
 end regDomain
 
----------------------------------------------------------------- results
+# results
 function bmcSummary
    local tCounts, tURL, tCat, tBucket, tKey, tOut
    repeat for each key tURL in sVerdict
@@ -514,7 +566,7 @@ private function csvCell pText
    return quote & pText & quote
 end csvCell
 
----------------------------------------------------------------- applying to the bookmarks file
+# applying to the bookmarks file
 /* Moves every DELETE / REVIEW bookmark (never Reading List items) into
    <pDeleteName> / <bucket> and <pReviewName> / <bucket>, two new folders added at the
    end of Safari's top-level bookmark list.  Writes a dated backup into bmcBackupFolder() first.
@@ -525,7 +577,7 @@ function bmcApply pDeleteName, pReviewName
    if pReviewName is empty then put kDefaultReviewName into pReviewName
    if sVerdict is not an array then return "ERROR: nothing scanned yet"
    put bmcBookmarksFile() into tFile
-   if sFile is empty and bmcSafariIsRunning() then return "ERROR: Safari is running. Quit Safari first, then apply again."
+   if isSafariOwnFile() and bmcSafariIsRunning() then return "ERROR: Safari is running. Quit Safari first, then apply again."
    -- re-read the file fresh so we never work from stale offsets
    put shell("plutil -convert xml1 -o - " & q(tFile)) into tData
    if the result is not 0 or not (tData contains "<plist") then return "ERROR: could not read " & tFile

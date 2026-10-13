@@ -2,7 +2,7 @@
 
 Finds stale Safari bookmarks (dead domains, 404s, parked pages, pages that never load) and moves them into **For deletion** and **Review** folders so you can look through them in Safari and delete what you agree with. Thirty years of bookmarks, sorted in a few minutes.
 
-- `SafariBookmarkLib.livecodescript` is the library that does the work (below).
+- `SafariBookmarkLib.hyperxtalkscript` is the library that does the work (below). It is a script-only stack; to open it in LiveCode rather than HyperXTalk, rename it to `SafariBookmarkLib.livecodescript`.
 - `SafariBookmarkCleaner.hyperxtalk` is a HyperXTalk / LiveCode stack with the interface; wire its buttons to the library with the scripts under "Typical flow".
 
 ## SafariBookmarkLib
@@ -18,7 +18,11 @@ Safari's AppleScript dictionary has no bookmark objects at all (only a "show boo
 ## Requirements
 
 - macOS. Safari must be quit when you apply changes (the library refuses otherwise).
-- **Full Disk Access** for whichever app runs the stack (LiveCode IDE, HyperXTalk, or your built standalone): System Settings > Privacy & Security > Full Disk Access. Without it the bookmarks file cannot be read, and `bmcLoadBookmarks()` / `bmcScan` return an error saying so.
+- Access to `~/Library/Safari/Bookmarks.plist`, which macOS protects. Two ways, and the library supports both:
+  1. **Let the user pick the file.** Call `bmcChooseBookmarksFile()`; it shows an Open dialog already pointed at the file. Choosing a file in an Open dialog counts as user intent, and macOS then lets the app read and write *that file* for the rest of its run. No settings, no restart. (Verified with Script Editor, an app with no Full Disk Access: before the dialog, reading failed with a permission error; after it, reading, `plutil`, and opening the file for writing all succeeded. Creating a new file beside it is still refused, which the library never needs to do.)
+  2. **Full Disk Access** for the app (System Settings > Privacy & Security > Full Disk Access, add the app with the + button; it does not appear in the list by itself). Then everything works without a dialog.
+
+  `bmcCanReadBookmarks()` tells you which situation you are in, and `bmcScan` / `bmcLoadBookmarks()` return a clear error if neither applies.
 
 ## Using it
 
@@ -35,6 +39,10 @@ The scripts below match the controls in `SafariBookmarkCleaner.hyperxtalk`: butt
 ```
 -- Button "Scan"
 on mouseUp
+   if not bmcCanReadBookmarks() then
+      answer "macOS protects Safari's bookmarks file. In the next dialog, choose Bookmarks.plist to let this app work on it." with "OK"
+      if bmcChooseBookmarksFile() is empty then exit mouseUp
+   end if
    put empty into field "Log"
    put "Reading bookmarks…" into field "Status"
    set the thumbPosition of scrollbar "Progress" to 0
@@ -111,6 +119,8 @@ All public names begin with `bmc`.
 | `bmcSafariIsRunning()` | true / false. |
 | `bmcLastBackup()` | Path of the backup written by the last `bmcApply`. |
 | `bmcSetOption pName, pValue` | `"parallel"` simultaneous fetches (32), `"batch"` URLs per progress message (64), `"timeout"` seconds per URL (20). |
+| `bmcCanReadBookmarks()` | true if the bookmarks file can be read right now. |
+| `bmcChooseBookmarksFile()` | Open dialog pointed at Safari's Bookmarks.plist. Picking it grants the app access to that file without Full Disk Access. Returns the chosen path, or empty if cancelled. |
 | `bmcSetBookmarksFile pPath` | Work on a copy of a bookmarks file instead of Safari's own (for testing). Empty restores the default. |
 | `bmcCategories()` | `DELETE,REVIEW,OK` |
 
