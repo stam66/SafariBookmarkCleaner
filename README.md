@@ -114,11 +114,14 @@ on hiliteChanged
    filterResults the hilitedItemNames of me
 end hiliteChanged
 
--- DataGrid "log" script: double-click a row to open that bookmark in the browser
+-- DataGrid "log" script: double-click a row to open that bookmark in the browser.
+-- An array-valued property cannot be subscripted in place, so copy the row into a
+-- variable first.
 on mouseDoubleUp
-   local tLine
-   put the dgHilitedLines of me into tLine
-   if tLine is not empty then bmcOpenURL the dgDataOfLine[tLine]["url"] of me
+   local tData
+   if the dgHilitedLines of me is empty then exit to top
+   put the dgDataOfLine[the dgHilitedLines of me] of me into tData
+   bmcOpenURL tData["url"]
 end mouseDoubleUp
 
 -- Button "Apply"
@@ -210,4 +213,4 @@ Lower level, also public: `bmcLoadBookmarks()`, `bmcCheckURLs pURLs, [pProgressT
 - Timing on a 3,950-bookmark file: reading and parsing the plist takes about 30 seconds (it is done once for the scan and again for the apply, so offsets are never stale); testing 1,780 unique URLs takes 4 to 6 minutes with the default settings. The `shell()` call blocks for the length of each batch, so the UI updates between batches, not during them.
 - The network layer is one private function, `checkBatch`, which writes a numbered URL list and runs curl in parallel through `xargs`. If you would rather use tsNet (commercial LiveCode only; it is itself a libcurl wrapper), that is the one function to replace. It must return, per URL, the HTTP status, the final URL after redirects, and a curl-style exit code (6 = DNS failure, 28 = timeout, 0 = completed).
 - Undo: quit Safari and call `bmcRestore()`. Backups are plain copies of `Bookmarks.plist`, so you can also copy one back by hand from the Backups folder.
-- One LiveCode pitfall found while building this: `does not contain` is not valid syntax. The engine rejects the whole script silently when a script-only stack is loaded as a library, so nothing in it is callable. Use `not (x contains y)`.
+- Two LiveCode pitfalls met while building this. An array-valued property such as `the dgDataOfLine[n] of group "log"` cannot be subscripted directly (`...["url"]` errors); put it into a variable first. And `does not contain` is not valid syntax. The engine rejects the whole script silently when a script-only stack is loaded as a library, so nothing in it is callable. Use `not (x contains y)`.
