@@ -63,9 +63,13 @@ on mouseUp
    set the allData of group "log" to the dgData of group "log"
    set the hilitedItemNames of widget "Filter" to "ALL"   -- show the full set by default
    put bmcStats() into tStats
-   put tStats["total"] && "bookmarks," && tStats["unique"] && "distinct URLs," && \
-         tStats["duplicates"] && "duplicate copies.  Delete:" && tStats["bookmarksDELETE"] && \
-         " Review:" && tStats["bookmarksREVIEW"] && " OK:" && tStats["bookmarksOK"] into field "Status"
+   -- category counts are bookmarks (all copies) and sum to "total";
+   -- the URL counts in brackets sum to "unique"
+   put tStats["total"] && "bookmarks =" && tStats["unique"] && "distinct URLs +" && \
+         tStats["duplicates"] && "duplicate copies." & return & \
+         "Delete:" && tStats["bookmarksDELETE"] && "bookmarks (" & tStats["urlsDELETE"] & " URLs)   " & \
+         "Review:" && tStats["bookmarksREVIEW"] && "bookmarks (" & tStats["urlsREVIEW"] & " URLs)   " & \
+         "OK:" && tStats["bookmarksOK"] && "bookmarks (" & tStats["urlsOK"] & " URLs)" into field "Status"
    enable button "Apply"
    enable button "Report"
 end mouseUp
@@ -170,7 +174,7 @@ All public names begin with `bmc`.
 | `bmcScan [pProgressTarget]` | Loads the bookmarks, tests every unique URL, stores the verdicts. `the result` is empty on success or an error message. Sends `bmcProgress pDone, pTotal, pLines` to the target after every batch. |
 | `bmcApply([pDeleteName], [pReviewName])` | Moves every flagged bookmark into the two folders (default names "For deletion" and "Review"), each with sub-folders by reason. Returns `OK ...` or `ERROR ...`. Refuses while Safari is running. Reading List items are never moved. |
 | `bmcSummary()` | Text summary of the last scan: counts per category and reason. |
-| `bmcStats()` | Array of counts: `total`, `unique`, `duplicates`, `readingList`, `nonWeb`, `urlsDELETE` / `urlsREVIEW` / `urlsOK`, `bookmarksDELETE` / `bookmarksREVIEW` / `bookmarksOK`. |
+| `bmcStats()` | Array of counts: `total`, `unique`, `duplicates`, `readingList`, `nonWeb`, `urlsDELETE` / `urlsREVIEW` / `urlsOK` (sum to `unique`), `bookmarksDELETE` / `bookmarksREVIEW` / `bookmarksOK` (sum to `total`, every copy counted). |
 | `bmcResults(pCategory)` | DataGrid-ready rows, one per bookmark, for `DELETE`, `REVIEW`, `OK` or `ALL`. Each row has `category`, `reason`, `detail`, `http`, `url`, `title`, `folder`, `copies`, `readingList`, `uuid`. |
 | `bmcOpenURL pURL` | Opens a bookmark in the default browser. |
 | `bmcReportCSV()` | CSV of every flagged bookmark, one row per bookmark. |
