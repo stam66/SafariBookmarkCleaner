@@ -34,39 +34,92 @@ start using stack "SafariBookmarkLib"      -- or add it to your standalone's sta
 
 ### Typical flow
 
-The scripts below match the controls in `SafariBookmarkCleaner.hyperxtalk`: buttons **Scan**, **Apply**, **Report**, **Help**; fields **Status** and **Log**; progress scrollbar **Progress**.
+The scripts below assume these controls: buttons **Scan**, **Apply**, **Report**; a field **Status**; a progress scrollbar **Progress**; a DataGrid (table style) named **log** with columns `category`, `reason`, `url`, `title`, `folder`, `copies`; and a group **Filter** of radio buttons named `DELETE`, `REVIEW`, `OK` and `ALL`.
+
+While the scan runs, each finished batch is appended to the grid (category, reason and URL only). When it completes, the grid is reloaded with the full rows from `bmcResults("ALL")`, which add title, folder and copy count, and that full set is cached in the grid's `allData` custom property so the filter buttons never need to call the library again.
 
 ```
 -- Button "Scan"
 on mouseUp
+   local tStats
    if not bmcCanReadBookmarks() then
       answer "macOS protects Safari's bookmarks file. In the next dialog, choose Bookmarks.plist to let this app work on it." with "OK"
       if bmcChooseBookmarksFile() is empty then exit mouseUp
    end if
-   put empty into field "Log"
+   set the dgData of group "log" to empty
+   set the allData of group "log" to empty
    put "Reading bookmarks…" into field "Status"
    set the thumbPosition of scrollbar "Progress" to 0
    disable me
-   bmcScan the long id of this card         -- progress messages are sent to the card
+   bmcScan the long id of this card         -- bmcProgress messages come to the card
    enable me
    if the result is not empty then
       put the result into field "Status"
       answer the result
       exit mouseUp
    end if
-   put bmcSummary() & return after field "Log"
-   put "Scan finished. Review the log, then quit Safari and click Apply." into field "Status"
+   -- full rows (title, folder, copies) replace the progress rows, and are cached
+   set the dgData of group "log" to bmcResults("ALL")
+   set the allData of group "log" to the dgData of group "log"
+   set the hilitedButtonName of group "Filter" to "ALL"
+   put bmcStats() into tStats
+   put tStats["total"] && "bookmarks," && tStats["unique"] && "distinct URLs," && \
+         tStats["duplicates"] && "duplicate copies.  Delete:" && tStats["bookmarksDELETE"] && \
+         " Review:" && tStats["bookmarksREVIEW"] && " OK:" && tStats["bookmarksOK"] into field "Status"
    enable button "Apply"
    enable button "Report"
 end mouseUp
 
 -- Card script: the library sends this after every batch of URLs
 on bmcProgress pDone, pTotal, pLines
+   local tData, tN, tLine, tRow
    put "Tested" && pDone && "of" && pTotal && "URLs" into field "Status"
    set the thumbPosition of scrollbar "Progress" to round(100 * pDone / pTotal)
-   put pLines & return after field "Log"    -- category TAB reason TAB url, one line per URL
-   set the scroll of field "Log" to the formattedHeight of field "Log"
+   put the dgData of group "log" into tData
+   put the number of lines of the keys of tData into tN
+   set the itemDelimiter to tab
+   repeat for each line tLine in pLines        -- category TAB reason TAB url
+      put item 1 of tLine into tRow["category"]
+      put item 2 of tLine into tRow["reason"]
+      put item 3 of tLine into tRow["url"]
+      add 1 to tN
+      put tRow into tData[tN]
+   end repeat
+   set the dgData of group "log" to tData
+   dispatch "ScrollLineIntoView" to group "log" with tN
 end bmcProgress
+
+-- Card script: filter from the cached full set
+command filterResults pCategory
+   local tAll, tRows, tN, tOut, tIndex
+   put the allData of group "log" into tAll
+   if tAll is not an array then exit filterResults   -- nothing scanned yet
+   if pCategory is "ALL" then
+      put tAll into tRows
+   else
+      put 0 into tOut
+      repeat with tIndex = 1 to the number of lines of the keys of tAll
+         if tAll[tIndex]["category"] is pCategory then
+            add 1 to tOut
+            put tAll[tIndex] into tRows[tOut]
+         end if
+      end repeat
+   end if
+   set the dgData of group "log" to tRows
+   set the dgHilitedLines of group "log" to empty
+end filterResults
+
+-- Group "Filter" (one script for all four radio buttons)
+on mouseUp
+   filterResults the short name of the target
+end mouseUp
+
+-- DataGrid "log" script: double-click a row to open that bookmark in the browser
+on mouseDoubleUp
+   local tLine
+   put the dgHilitedLines of me into tLine
+   if tLine is not empty then bmcOpenURL the dgDataOfLine[tLine]["url"] of me
+end mouseDoubleUp
 
 -- Button "Apply"
 on mouseUp
@@ -103,40 +156,7 @@ on mouseUp
 end mouseUp
 ```
 
-### Showing results in a DataGrid
-
-The scan tests each distinct URL once (about 1,780 for 3,700 bookmarks, because the old imports hold many copies), and every copy of a URL gets the same verdict. `bmcStats()` gives the numbers for the interface and `bmcResults()` gives rows for a DataGrid, so the log field can go.
-
-```
--- After bmcScan succeeds: counts and the grid
-on showResults
-   local tStats
-   put bmcStats() into tStats
-   put tStats["total"] && "bookmarks," && tStats["unique"] && "distinct URLs," && \
-         tStats["duplicates"] && "duplicate copies." & return & \
-         "Delete:" && tStats["bookmarksDELETE"] && " Review:" && tStats["bookmarksREVIEW"] && \
-         " OK:" && tStats["bookmarksOK"] into field "Status"
-   filterResults "DELETE"
-end showResults
-
--- Radio buttons named "DELETE", "REVIEW", "OK" and "ALL" in a group "Filter"
-on mouseUp
-   filterResults the short name of the target
-end mouseUp
-
-command filterResults pCategory
-   set the dgData of group "Results" to bmcResults(pCategory)
-end filterResults
-
--- In the DataGrid's script: double-click a row to open that bookmark
-on mouseDoubleUp
-   local tLine
-   put the dgHilitedLines of me into tLine
-   if tLine is not empty then bmcOpenURL the dgDataOfLine[tLine]["url"] of me
-end mouseDoubleUp
-```
-
-Set up the DataGrid as a table with columns named `category`, `reason`, `url`, `title`, `folder`, `copies` (the row keys), in that or any order. A button that opens the selected row works the same way as the double-click handler. `copies` shows how many bookmarks share that URL; they all move together when you apply.
+Notes on the grid: the row keys are the column names, so any order of columns works and extra keys (`detail`, `http`, `uuid`, `readingList`) are simply not shown unless you add a column for them. `copies` is how many bookmarks share that URL; all copies move together when you apply. The scan tests each distinct URL once (about 1,780 for 3,700 bookmarks, because the old imports hold many copies), which is why the progress total is smaller than the bookmark count.
 
 ## Handlers
 
