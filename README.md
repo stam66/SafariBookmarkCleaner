@@ -34,9 +34,9 @@ start using stack "SafariBookmarkLib"      -- or add it to your standalone's sta
 
 ### Typical flow
 
-The scripts below assume these controls: buttons **Scan**, **Apply**, **Report**; a field **Status**; a progress scrollbar **Progress**; a DataGrid (table style) named **log** with columns `category`, `reason`, `url`, `title`, `folder`, `copies`; and a group **Filter** of radio buttons named `DELETE`, `REVIEW`, `OK` and `ALL`.
+The scripts below assume these controls: buttons **Scan**, **Apply**, **Report**; a field **Status**; a progress scrollbar **Progress**; a DataGrid (table style) named **log** with columns `category`, `reason`, `url`, `title`, `folder`, `copies`; and a segmented control widget **Filter** whose `itemNames` are `REVIEW,DELETE,OK,ALL` (its `itemLabels` can read however you like).
 
-While the scan runs, each finished batch is appended to the grid (category, reason and URL only). When it completes, the grid is reloaded with the full rows from `bmcResults("ALL")`, which add title, folder and copy count, and that full set is cached in the grid's `allData` custom property so the filter buttons never need to call the library again.
+While the scan runs, each finished batch is appended to the grid (category, reason and URL only). When it completes, the grid is reloaded with the full rows from `bmcResults("ALL")`, which add title, folder and copy count, and that full set is cached in the grid's `allData` custom property so the filter segments never need to call the library again. The full set is what shows by default; the segments narrow it.
 
 ```
 -- Button "Scan"
@@ -61,7 +61,7 @@ on mouseUp
    -- full rows (title, folder, copies) replace the progress rows, and are cached
    set the dgData of group "log" to bmcResults("ALL")
    set the allData of group "log" to the dgData of group "log"
-   set the hilitedButtonName of group "Filter" to "ALL"
+   set the hilitedItemNames of widget "Filter" to "ALL"   -- show the full set by default
    put bmcStats() into tStats
    put tStats["total"] && "bookmarks," && tStats["unique"] && "distinct URLs," && \
          tStats["duplicates"] && "duplicate copies.  Delete:" && tStats["bookmarksDELETE"] && \
@@ -109,10 +109,10 @@ command filterResults pCategory
    set the dgHilitedLines of group "log" to empty
 end filterResults
 
--- Group "Filter" (one script for all four radio buttons)
-on mouseUp
-   filterResults the short name of the target
-end mouseUp
+-- Segmented control "Filter": the widget sends hiliteChanged when a segment is clicked
+on hiliteChanged
+   filterResults the hilitedItemNames of me
+end hiliteChanged
 
 -- DataGrid "log" script: double-click a row to open that bookmark in the browser
 on mouseDoubleUp
